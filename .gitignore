@@ -1,3 +1,9 @@
+# custom stuff
+node_modules/
+package-lock.json
+sheets.googleapis.com-python.json
+client_secret*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
