@@ -4783,7 +4783,7 @@ var SIM_CONTROLLER = (function () {
 			if (card_picked < 0) return false;
 
 			play_card(deck_p_deck[card_picked], p, turn);
-			name; SIMULATOR.first_drop = false; //// TEMP
+			if (SIMULATOR.first_drop) SIMULATOR.first_card = deck_p_deck[card_picked].name; SIMULATOR.first_drop = false; //// TEMP
 			removeFromDeck(deck_p_deck, card_picked);
 		}
 		return true;
