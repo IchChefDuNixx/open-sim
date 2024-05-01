@@ -2321,7 +2321,8 @@ var SIM_CONTROLLER = (function () {
 		//// Increment wins/losses/games per first_card
         let cardStats = SIMULATOR.first_drops[SIMULATOR.first_card];
         if (!cardStats) {
-            cardStats = SIMULATOR.first_drops[SIMULATOR.first_card] = { draws: 0, wins: 0, losses: 0 };
+            cardStats = SIMULATOR.first_drops[SIMULATOR.first_card] = {
+				draws: 0, wins: 0, losses: 0 };
         }
         if (result == 'draw') {
             cardStats.draws++;
@@ -4783,7 +4784,8 @@ var SIM_CONTROLLER = (function () {
 			if (card_picked < 0) return false;
 
 			play_card(deck_p_deck[card_picked], p, turn);
-			if (SIMULATOR.first_drop) SIMULATOR.first_card = deck_p_deck[card_picked].name; SIMULATOR.first_drop = false; //// TEMP
+			if (SIMULATOR.first_drop) SIMULATOR.first_card = deck_p_deck[card_picked].name;
+			SIMULATOR.first_drop = false; //// TEMP
 			removeFromDeck(deck_p_deck, card_picked);
 		}
 		return true;

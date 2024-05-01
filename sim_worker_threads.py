@@ -9,7 +9,7 @@ from collections import defaultdict
 import ctypes
 from itertools import combinations, product
 import random
-import requests
+import re
 import subprocess
 from typing import Literal
 
@@ -18,11 +18,20 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import pygsheets
+import requests
 
 
 # In[ ]:
 
 class SimUtils:
+
+    # not sure where to put this function
+    def get_current_bges(data_path:str) -> str:
+            with open(data_path, "r", encoding="cp850") as file:
+                data = file.read()
+            pattern = r'current_bges\s*=\s*\[([^\]]+)\]'
+            match = re.search(pattern, data)
+            return match[1]
 
     class HashUtils:
         def __init__(self, heroes:str="", base:str="", options:str="") -> None:
@@ -58,10 +67,8 @@ class SimUtils:
 
     class PlotUtils:
         def __init__(self, results:pd.DataFrame, base_cards:int, is_def:bool=False) -> None:
-            if "Avgs" in results.index[0]:
-                results = results.drop(results.index[0], axis=0)
-            if "Avgs" in results.columns[0]:
-                results = results.drop(results.columns[0], axis=1)
+            droppable_indices = ["Off Avgs", "Def Avgs", "Off vs top 50", "Def vs top 50"]
+            results = results.drop(index=droppable_indices, columns=droppable_indices, errors="ignore")
 
             self.results = results if not is_def else results.T
             self.base_cards = base_cards
@@ -101,7 +108,7 @@ class SimUtils:
     class SheetUtils:
         def __init__(self, secret_path:str, sheet_name:str) -> None:
             self.sheet_name = sheet_name
-            self.client = pygsheets.authorize(client_secret=secret_path)            
+            self.client = pygsheets.authorize(client_secret=secret_path)
             self.sheets = self.client.open(self.sheet_name)
 
             self.fetch_new_dfs()
@@ -120,13 +127,13 @@ class SimUtils:
             full_defenders = self.dfs[0].iloc[2, 5:].tolist()
 
             return full_attackers, full_defenders
-        
+
         def get_hash_stash(self):
             full_attackers = self.dfs[2].iloc[:, 0].tolist()
             full_defenders = self.dfs[2].iloc[:, 1].tolist()
 
             return full_attackers, full_defenders
-        
+
         def get_cloud_hashes(self, type:Literal["sc", "solo", "gc", "gw", "guild", "os", "open"] = None):
             if type in {"sc" "solo"}:
                 return self._get_solo_hashes()
@@ -137,7 +144,7 @@ class SimUtils:
             if "guild" in self.sheet_name.lower() or "war" in self.sheet_name.lower():
                 return self._get_gc_hashes()
             raise Warning("Unable to (auto-)detect event type. Provide valid type parameter.")
-            
+
         def get_open_sim_hashes(self):
             self.fetch_new_dfs()
             self.sheets[0].clear(start="A6", end="B"+str(self.find_first_free_cell(0, 1)))
@@ -150,7 +157,7 @@ class SimUtils:
             def_notes = [row[1] for row in self.dfs[1].iloc[5:, :2].values if row[0] != '']
 
             return attackers, defenders, off_notes, def_notes
-        
+
         def find_first_free_cell(self, sheet_index:int, column_index:int):
             column_values = self.sheets[sheet_index].get_col(column_index, include_tailing_empty=False)
             return len(column_values) + 1
@@ -175,6 +182,7 @@ class SimUtils:
                 self.sheets[idx].set_dataframe(df, append_index, copy_index=True, copy_head=False)
 
 
+
 # In[ ]:
 
 class Simulations:
@@ -190,14 +198,13 @@ class Simulations:
         subprocess.run(f"start node {path}", shell=True)
 
     # split work evenly across threads
-    # TODO: change api to accept simConfig dict, auto merge to use JS defaults
     def mass_sim(self, attackers:str|list[str], defenders:str|list[str],
                 num_sims:int=10000, include_top50:bool=False) -> pd.DataFrame:
-        
+
         self.attackers = attackers
         self.defenders = defenders
         self.include_top50 = include_top50
-        
+
         if isinstance(attackers, str):
             attackers = [attackers]
         if isinstance(defenders, str):
@@ -240,7 +247,8 @@ class Simulations:
         self.allow_sleep()
 
         return self._tabulate_results(response.json())
-        
+
+
     def spam_sim(self, attackers:str|list[str], defenders:str|list[str],
                  num_sims:int=10000, is_def:bool=False):
 
@@ -253,9 +261,10 @@ class Simulations:
 
         return self.mass_sim(attackers = attackers, defenders = defenders, num_sims=num_sims)
 
+
     def dungeon_sim(self, attackers:str|list[str], id:int, level:str|int,
                     num_sims:int=10000):
-        
+
         if isinstance(attackers, str):
             attackers = [attackers]
         if isinstance(level, int):
@@ -280,7 +289,7 @@ class Simulations:
                 "siegeMode": False,
                 "raidID": id,
                 "raidLevel": level
-                }    
+                }
             })
 
         except KeyboardInterrupt:
@@ -292,6 +301,7 @@ class Simulations:
         self.allow_sleep()
 
         return self._tabulate_results(response.json())
+
 
     def rng_chunk_sim(self): # TODO: a lot
         from itertools import product
@@ -321,12 +331,12 @@ class Simulations:
                     "siege": False,
                     "raidID": 28074,
                     "raidLevel": 140
-                }    
+                }
             })
 
         response.json()
 
-        
+
     def _tabulate_results(self, results) -> pd.DataFrame:
         results_dict = defaultdict(lambda: defaultdict(int))
         count_dict = defaultdict(lambda: defaultdict(int)) # workaround for averaging duplicate entries
@@ -344,35 +354,8 @@ class Simulations:
 
         return self._get_avgs_and_sort(df)
 
+
     def _get_avgs_and_sort(self, df:pd.DataFrame) -> pd.DataFrame:
-
-        # Calculate Attacker Average
-        df.insert(0, "Off Avgs", df.mean(axis=1))
-
-        # Sort by Attacker Average
-        df = df.sort_values(by="Off Avgs", ascending=False)
-
-        df = df.T
-
-        # Calculate Defender Average
-        df.insert(0, "Def Avgs", 100 - df.iloc[1:, :].mean(axis=1).round(2))
-        if self.include_top50:
-            df.insert(1, "Def vs top 50", 100 - df.iloc[1:, 1:51].mean(axis=1))
-
-        # Sort by Defender Average
-        df = pd.concat([df.iloc[:1], df.iloc[1:].sort_values(by="Def Avgs", ascending=False)])
-
-        df = df.T
-
-        # Calculate Attacker Average vs top 50
-        if self.include_top50:
-            df.insert(1, "Off vs top 50", df.iloc[2:, 1:51].mean(axis=1).round(2))
-
-        # cleanup
-        df = df.map(lambda x: round(x, 2), na_action="ignore")
-        df = df.fillna("")
-
-        return df
 
         # Calculate Total Averages and sort
         df.insert(0, "Off Avgs", df.mean(axis=1))
@@ -394,7 +377,7 @@ class Simulations:
         df = df.fillna("")
 
         return df
-        
+
 
     # Function to prevent windows sleep
     def prevent_sleep(self):
