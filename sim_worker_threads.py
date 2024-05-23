@@ -12,6 +12,7 @@ import random
 import re
 import subprocess
 from typing import Literal
+import xml.etree.ElementTree as ET
 
 # Third-party library imports
 from matplotlib import pyplot as plt
@@ -24,14 +25,33 @@ import requests
 # In[ ]:
 
 class SimUtils:
+    # EXPERIMENTAL GUILD CLASH BGE
+    # https://github.com/vuzaldo/comdev/blob/main/xmls/event_timeline_clash.xml
+    def get_guild_clash_bge(timeline_url:str="https://raw.githubusercontent.com/vuzaldo/comdev/main/xmls/event_timeline_clash.xml"):
+        data = requests.get(timeline_url).content
+        root = ET.fromstring(data)
 
-    # not sure where to put this function
-    def get_current_bges(data_path:str) -> str:
-            with open(data_path, "r", encoding="cp850") as file:
-                data = file.read()
-            pattern = r'current_bges\s*=\s*\[([^\]]+)\]'
-            match = re.search(pattern, data)
-            return match[1]
+        events = root.findall('event')[::-1]
+        for event in events:
+            name = event.find('name')
+            if name is not None and "Guild Clash" in name.text:
+                print(f"Found {name.text}!")
+                return event.find(".//bg_effect").text
+
+
+    # find just global BGEs by default
+    def get_current_bges(data_path:str, add_GC:bool=False) -> str:
+        with open(data_path, "r", encoding="cp850") as file:
+            data = file.read()
+        pattern = r'current_bges\s*=\s*\[([^\]]+)\]'
+        match = re.search(pattern, data)
+        bges = match[1]
+
+        if not add_GC:
+            return bges
+        else:
+            return bges + "," + SimUtils.get_guild_clash_bge()
+
 
     class HashUtils:
         def __init__(self, heroes:str="", base:str="", options:str="") -> None:
@@ -41,25 +61,30 @@ class SimUtils:
                 self.options = self._split_string(options, 5)
             else:
                 raise Warning("invalid length input")
+            
 
-        def get_hashes(self, percentage:int|float=1) -> list[str]:
-            candidates = []
+        def get_hashes(self, percentage:float=1) -> list[str]:
+            candidates = set()
+
+            self_base = self.base # performance go up
 
             if self.heroes:
                 for hero in self.heroes:
-                    for x in combinations(self.options, 15 - len(self.base) // 5):
-                        candidates.append(hero + self.base + "".join(x))
+                    for x in combinations(self.options, 15 - len(self_base) // 5):
+                        candidates.add(hero + self_base + "".join(x))
+
             else:
-                for x in combinations(self.options, 16 - len(self.base) // 5):
-                    candidates.append(self.base + "".join(x))
+                for x in combinations(self.options, 16 - len(self_base) // 5):
+                    candidates.add(self_base + "".join(x))
 
             if percentage < 1:
                 size = int(len(candidates) * percentage)
-                chosen = random.sample(candidates, size)
+                chosen = random.sample(list(candidates), size)
                 return chosen
 
             else:
-                return candidates
+                return list(candidates)
+
 
         def _split_string(self, hash:str, chunk_size) -> list[str]:
             return [hash[i:i+chunk_size] for i in range(0, len(hash), chunk_size)]
@@ -79,16 +104,10 @@ class SimUtils:
 
             substring_distribution = pd.DataFrame(
                 {i: self._count_substrings(self.results.index[:i], self.base_cards)
-                 for i in range(1, len(self.results) + 1)}, index=substrings
+                    for i in range(1, min(len(self.results), top_n) + 1)}, index=substrings
             )
 
-            if not self.is_def:
-                plot_data = substring_distribution.apply(
-                    lambda col: col / col.sum(), axis=0).T.head(top_n)
-            else:
-                plot_data = substring_distribution.apply(
-                    lambda col: col / col.sum(), axis=0).iloc[:, :top_n].T
-
+            plot_data = substring_distribution.div(substring_distribution.sum()).T
             plot_data.plot.bar(stacked=True, width=1, figsize=(15, 10)
                 ).legend(bbox_to_anchor=(1, 1), fontsize=20, reverse=True)
             plt.show()
