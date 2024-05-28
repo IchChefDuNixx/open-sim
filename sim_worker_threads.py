@@ -25,9 +25,13 @@ import requests
 # In[ ]:
 
 class SimUtils:
+
+    class FileUtils:
+        pass
+
     # EXPERIMENTAL GUILD CLASH BGE
     # https://github.com/vuzaldo/comdev/blob/main/xmls/event_timeline_clash.xml
-    def get_guild_clash_bge(timeline_url:str="https://raw.githubusercontent.com/vuzaldo/comdev/main/xmls/event_timeline_clash.xml"):
+    def get_guild_clash_bge(timeline_url:str="https://raw.githubusercontent.com/vuzaldo/comdev/main/xmls/event_timeline_clash.xml") -> str|None:
         data = requests.get(timeline_url).content
         root = ET.fromstring(data)
 
@@ -36,7 +40,11 @@ class SimUtils:
             name = event.find('name')
             if name is not None and "Guild Clash" in name.text:
                 print(f"Found {name.text}!")
-                return event.find(".//bg_effect").text
+                bges = event.findall(".//bg_effect")
+                return ",".join([bge.text for bge in bges])
+
+        print("Found no match!")
+        return None
 
 
     # find just global BGEs by default
@@ -47,21 +55,24 @@ class SimUtils:
         match = re.search(pattern, data)
         bges = match[1]
 
-        if not add_GC:
-            return bges
-        else:
-            return bges + "," + SimUtils.get_guild_clash_bge()
+        if add_GC:
+            gc_bge = SimUtils.get_guild_clash_bge()
+            if gc_bge:
+                return bges + "," + gc_bge
+        return bges
+
 
 
     class HashUtils:
-        def __init__(self, heroes:str="", base:str="", options:str="") -> None:
-            if len(heroes) % 5 == 0 and len(base) % 5 == 0 and len(options) % 5 == 0:
+        def __init__(self, heroes:str="", base:str="", options:str="", mythics:str="") -> None:
+            if len(heroes) % 5 == 0 and len(base) % 5 == 0 and len(options) % 5 == 0 and len(mythics) % 5 == 0:
                 self.heroes = self._split_string(heroes, 5)
                 self.base = base
                 self.options = self._split_string(options, 5)
+                self.mythics = self._split_string(mythics, 5)
             else:
                 raise Warning("invalid length input")
-            
+
 
         def get_hashes(self, percentage:float=1) -> list[str]:
             candidates = set()
@@ -90,14 +101,17 @@ class SimUtils:
             return [hash[i:i+chunk_size] for i in range(0, len(hash), chunk_size)]
 
 
+
     class PlotUtils:
         def __init__(self, results:pd.DataFrame, base_cards:int, is_def:bool=False) -> None:
+            # copied to SheetUtils.update_hash_order()
             droppable_indices = ["Off Avgs", "Def Avgs", "Off vs top 50", "Def vs top 50"]
             results = results.drop(index=droppable_indices, columns=droppable_indices, errors="ignore")
 
             self.results = results if not is_def else results.T
             self.base_cards = base_cards
             self.is_def = is_def
+
 
         def stacked(self, top_n:int) -> None:
             substrings = self._count_substrings(self.results.index, self.base_cards).index.sort_values()
@@ -112,6 +126,7 @@ class SimUtils:
                 ).legend(bbox_to_anchor=(1, 1), fontsize=20, reverse=True)
             plt.show()
 
+
         def _count_substrings(self, strings:list[str]|pd.Index, base_cards:int) -> pd.Series:
             substr_counts = {}
 
@@ -122,6 +137,7 @@ class SimUtils:
                     substr_counts[substring] = substr_counts.get(substring, 0) + 1
 
             return pd.Series(substr_counts).sort_values(ascending=False)
+
 
 
     class SheetUtils:
@@ -147,7 +163,9 @@ class SimUtils:
 
             return full_attackers, full_defenders
 
-        def get_hash_stash(self):
+        def get_hash_stash(self, fetch_new:bool=False):
+            if fetch_new:
+                self.fetch_new_dfs()
             full_attackers = self.dfs[2].iloc[:, 0].tolist()
             full_defenders = self.dfs[2].iloc[:, 1].tolist()
 
@@ -181,7 +199,7 @@ class SimUtils:
             column_values = self.sheets[sheet_index].get_col(column_index, include_tailing_empty=False)
             return len(column_values) + 1
 
-        def update_open_sim_results(self, df:pd.DataFrame, kind:Literal["off", "offense", "def", "defense"], fifo:bool=False):
+        def update_open_sim_results(self, df:pd.DataFrame, kind:Literal["off", "offense", "def", "defense"], fifo:bool=False) -> None:
             if kind.lower() in {"off", "offense"}:
                 idx = 0
             elif kind.lower() in {"def", "defense"}:
@@ -200,9 +218,23 @@ class SimUtils:
                 append_index = "D" + str(self.find_first_free_cell(idx, 4))
                 self.sheets[idx].set_dataframe(df, append_index, copy_index=True, copy_head=False)
 
+        # make top 50 results comparable with cloud's mass sim
+        def update_hash_order(self, results:pd.DataFrame) -> None:
+            # taken from PlotUtils.init()
+            droppable_indices = ["Off vs top 50", "Def vs top 50"]
+            results = results.drop(index=droppable_indices, columns=droppable_indices, errors="ignore")
+
+            df = pd.DataFrame({
+                'off_hashes': results.index[1:],
+                'def_hashes': results.columns[1:],
+                "Off Avgs": results["Off Avgs"][1:].values,
+                "Def Avgs": results.loc["Def Avgs"][1:].values
+            }).reset_index(drop=True)
+            self.sheets[2].set_dataframe(df, "A1", copy_index=False, copy_head=False)
+
+            return
 
 
-# In[ ]:
 
 class Simulations:
     def __init__(self, path:str, max_threads:int, #mode:str = "mass",
