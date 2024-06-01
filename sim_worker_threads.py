@@ -8,6 +8,7 @@
 from collections import defaultdict
 import ctypes
 from itertools import combinations, product
+import os
 import random
 import re
 import subprocess
@@ -15,6 +16,7 @@ from typing import Literal
 import xml.etree.ElementTree as ET
 
 # Third-party library imports
+from google.auth.exceptions import RefreshError
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
@@ -66,10 +68,12 @@ class SimUtils:
     class HashUtils:
         def __init__(self, heroes:str="", base:str="", options:str="", mythics:str="") -> None:
             if len(heroes) % 5 == 0 and len(base) % 5 == 0 and len(options) % 5 == 0 and len(mythics) % 5 == 0:
-                self.heroes = self._split_string(heroes, 5)
+                self.heroes = self._split_string(heroes) or [""]
+                self.has_heroes = len(heroes) > 0
                 self.base = base
-                self.options = self._split_string(options, 5)
-                self.mythics = self._split_string(mythics, 5)
+                self.base_len = len(base) // 5
+                self.options = self._split_string(options)
+                self.mythics = self._split_string(mythics)
             else:
                 raise Warning("invalid length input")
 
@@ -77,16 +81,21 @@ class SimUtils:
         def get_hashes(self, percentage:float=1) -> list[str]:
             candidates = set()
 
-            self_base = self.base # performance go up
+            for num_mythics in range(4): # max 0,1,2,3
+                if num_mythics > len(self.mythics): break
 
-            if self.heroes:
+                # non-hero (and non-mythic cards)
+                num_regulars = 16 - self.has_heroes - self.base_len - num_mythics
+                if num_regulars < 0: continue
+                print(num_regulars, self.has_heroes, self.base_len, num_mythics)
+                regulars = set(combinations(self.options, num_regulars))
+                mythics = set(combinations(self.mythics, num_mythics))
+
+                non_base = {regular + mythic for regular, mythic in product(regulars, mythics)}
+
                 for hero in self.heroes:
-                    for x in combinations(self.options, 15 - len(self_base) // 5):
-                        candidates.add(hero + self_base + "".join(x))
-
-            else:
-                for x in combinations(self.options, 16 - len(self_base) // 5):
-                    candidates.add(self_base + "".join(x))
+                    for option in non_base:
+                        candidates.add(hero + self.base + "".join(option))
 
             if percentage < 1:
                 size = int(len(candidates) * percentage)
@@ -94,10 +103,10 @@ class SimUtils:
                 return chosen
 
             else:
-                return list(candidates)
+                return candidates
 
 
-        def _split_string(self, hash:str, chunk_size) -> list[str]:
+        def _split_string(self, hash:str, chunk_size:int=5) -> list[str]:
             return [hash[i:i+chunk_size] for i in range(0, len(hash), chunk_size)]
 
 
@@ -142,8 +151,17 @@ class SimUtils:
 
     class SheetUtils:
         def __init__(self, secret_path:str, sheet_name:str) -> None:
+            try:
+                self.client = pygsheets.authorize(client_secret=secret_path)
+            except RefreshError as e: # retry authorization
+                if os.path.basename(os.getcwd()) in {"open-sim", "felix-sim"}:
+                    timed_token = "./sheets.googleapis.com-python.json"
+                    if os.path.exists(timed_token):
+                        os.remove(timed_token)
+                        if not os.path.exists(timed_token):
+                            self.client = pygsheets.authorize(client_secret=secret_path)
+
             self.sheet_name = sheet_name
-            self.client = pygsheets.authorize(client_secret=secret_path)
             self.sheets = self.client.open(self.sheet_name)
 
             self.fetch_new_dfs()
@@ -442,3 +460,5 @@ class Simulations:
         # Define constants from Windows API
         ES_CONTINUOUS = 0x80000000
         ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+
+# %%
