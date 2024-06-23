@@ -24,9 +24,9 @@ _GET = function(){};
 # 1
 function choose_card(p, turn, drawCards) {
   play_card(deck_p_deck[card_picked], p, turn);
-	if (SIMULATOR.first_drop) SIMULATOR.first_card = deck_p_deck[card_picked].name; ////
-	SIMULATOR.first_drop = false; //// TEMP
-	removeFromDeck(deck_p_deck, card_picked);
+			if (SIMULATOR.first_drop) SIMULATOR.first_card = deck_p_deck[card_picked].name; ////
+      SIMULATOR.first_drop = false; //// TEMP
+			removeFromDeck(deck_p_deck, card_picked);
 }
 # 2
 SIM_CONTROLLER.processSimResult = function () {
@@ -622,7 +622,7 @@ var makeUnit = (function() {
         permanentAttack: function() {
             return (this.attack + this.attack_berserk + this.attack_valor);
         },
-        
+
         hasNegativeStatus: function() {
             // Poison, Hex, Burn, Freeze, Venom, Weaken, Silence and Confuse
             return this.poisoned ||
@@ -2140,7 +2140,7 @@ var SIM_CONTROLLER = (function () {
 
             playerDeck: $('#deck1').val(),
             playerOrdered: $('#ordered').is(':checked'),
-            playerExactOrdered: $('#ordered2').is(':checked'),
+            playerExactOrdered: $('#exactorder').is(':checked'),
 
             cpuDeck: $('#deck2').val(),
             cpuOrdered: $('#ordered2').is(':checked'),
@@ -2361,6 +2361,20 @@ var SIM_CONTROLLER = (function () {
         else {
             result = 'draw';
         }
+		
+		//// Increment wins/losses/games per first_card
+		let cardStats = SIMULATOR.first_drops[SIMULATOR.first_card];
+		if (!cardStats) {
+			cardStats = SIMULATOR.first_drops[SIMULATOR.first_card] = {
+			  draws: 0, wins: 0, losses: 0 };
+		}
+		if (result == 'draw') {
+			cardStats.draws++;
+		} else if (result) {
+			cardStats.wins++;
+		} else {
+			cardStats.losses++;
+		}
 
         if (run_sims_batch > 0) {
             if (SIMULATOR.simsLeft > 0) SIMULATOR.simsLeft--;
@@ -2375,26 +2389,12 @@ var SIM_CONTROLLER = (function () {
         } else {
             SIMULATOR.losses++;
         }
-				//// Increment wins/losses/games per first_card
-				let cardStats = SIMULATOR.first_drops[SIMULATOR.first_card];
-				if (!cardStats) {
-					cardStats = SIMULATOR.first_drops[SIMULATOR.first_card] = {
-						draws: 0, wins: 0, losses: 0 };
-				}
-				if (result == 'draw') {
-						cardStats.draws++;
-				} else if (result) {
-						cardStats.wins++;
-				} else {
-						cardStats.losses++;
-				}
-
         SIMULATOR.points += SIMULATOR.calculatePoints();
         SIMULATOR.games++;
-        
+
         // Increment total turn count
         SIMULATOR.total_turns += SIMULATOR.simulation_turns;
-        
+
         var games = SIMULATOR.games;
         if (SIMULATOR.config.debug || simConfig.logPlaysOnly) {
             if (simConfig.findFirstLoss) {
@@ -2493,6 +2493,7 @@ var SIM_CONTROLLER = (function () {
 				if (turn > 2 && battleground.first_play) {
 					continue;
 				}
+				if (turn == -1 && battleground.first_play) continue; // Tower isn't affected by first_play
 
 				battleground.onCardPlayed(card, deck[p].deck, deck[o].deck);
 			}
@@ -2974,7 +2975,7 @@ var SIM_CONTROLLER = (function () {
 			return affected;
 		},
 
-		
+
 		// - Targets allied assaults
 		magicfield: function (src_card, skill) {
 
@@ -2998,7 +2999,7 @@ var SIM_CONTROLLER = (function () {
 					if (simConfig.debug) echo += debug_name(src_card) + ' activates anti-magic field, protecting ' + debug_name(target) + ' but it is nullified!<br>';
 					continue;
 				}
-				
+
 				affected++;
 
 				var protect_amt = protect;
@@ -3041,23 +3042,23 @@ var SIM_CONTROLLER = (function () {
 
 			for (var key = 0, len = targets.length; key < len; key++) {
 				var target = alliedUnits[targets[key]];
-				
+
 				// Check Nullify
 				if (target.nullified && !skill.ignore_nullify) {
 					target.nullified--;
 					if (simConfig.debug) echo += debug_name(src_card) + ' wing guards ' + debug_name(target) + ' but it is nullified!<br>';
 					continue;
 				}
-				
+
 				affected++;
-				
+
 				target.protected += wingward;
 				var invisBoost = Math.ceil(wingward/2);
 				target.invisible += invisBoost;
 				if (simConfig.debug) {
 					if (enhanced) echo += '<u>(Enhance: +' + enhanced + ')</u><br>';
-					echo += debug_name(src_card) + ' wing guards ' + debug_name(target) + 
-						', protecting it by ' + wingward + 
+					echo += debug_name(src_card) + ' wing guards ' + debug_name(target) +
+						', protecting it by ' + wingward +
 						' and imbuing it with invisible ' + invisBoost;
 					echo += '<br>';
 				}
@@ -3085,7 +3086,7 @@ var SIM_CONTROLLER = (function () {
 			for (var key = 0, len = alliedUnits.length; key < len; key++) {
 				var target = alliedUnits[key];
 				if (target.isAlive() && target.isInFaction(faction) && target.isTargetRarity(rarity)
-					&& (all || target.isDamaged() 
+					&& (all || target.isDamaged()
 						|| (invigorate && (!target.invigorated)))) {
 					targets.push(key);
 				}
@@ -3700,7 +3701,7 @@ var SIM_CONTROLLER = (function () {
 			if (!all) {
 				targets = choose_random_target(targets);
 			}
-			
+
 			var enrage = (skill.x || 0);
 			var enhanced = getEnhancement(src_card, skill.id, enrage);
 			enrage += enhanced;
@@ -3736,14 +3737,14 @@ var SIM_CONTROLLER = (function () {
 
 		// Vampirism
 		// - Reduced by Barrier, Ward, and Shroud
-		// - Not blocked by Invisibility 
+		// - Not blocked by Invisibility
 		// - Does not trigger Backlash
 		// This is a pseudo-activation-skill: it is not triggered
 		// in the same loop as the rest, and activates even
 		// when the unit is frozen or on cooldown
 		vampirism: function vampirism(sourceCard, enemyAssaults) {
 			var target = enemyAssaults[sourceCard.key];
-			
+
 			if (target && target.isAlive() && !sourceCard.silenced && sourceCard.isAlive()) {
 				var vampirism = sourceCard.vampirism;
 				var enhanced = getEnhancement(sourceCard, 'vampirism', vampirism);
@@ -3774,7 +3775,7 @@ var SIM_CONTROLLER = (function () {
 	};
 
 	var earlyActivationSkills = {
-		
+
 		// - Targets allied assaults
 		cleanse: function (src_card, skill, invigorate) {
 
@@ -4301,7 +4302,7 @@ var SIM_CONTROLLER = (function () {
 			if (!all) {
 				targets = choose_random_target(targets);
 			}
-			
+
 			var mark = skill.x;
 			var enhanced = getEnhancement(src_card, skill.id, mark);
 			mark += enhanced;
@@ -5341,7 +5342,7 @@ var SIM_CONTROLLER = (function () {
 			if (!current_assault.isAlive()) {
 				doOnDeathSkills(current_assault, null);
 			}
-			
+
 			if (current_assault.silenced == 1) {
 				// Now that silence is wearing off, re-enable these skills
 				setPassiveStatus(current_assault, 'evade', 'invisible');
@@ -5713,7 +5714,7 @@ var SIM_CONTROLLER = (function () {
 				doCounterDamage(current_assault, target, 'Fury', target.fury, 0, false);
 			}
 		}
-		
+
 		if (damage > 0 && !current_assault.silenced) {
 			if (current_assault.isAlive()) {
 				// Berserk
@@ -6008,7 +6009,7 @@ SIM_CONTROLLER.startsim = function (options) {
 }
 
 if (isMainThread) {
-const workerPool = [];
+  const workerPool = [];
 for (let i = 0; i < num_workers; i++) {
   workerPool.push(new Worker(__filename)); // __filename means the current one
 }
@@ -6057,7 +6058,7 @@ function convertRunes(obj) {
   return Object.keys(obj).reduce((acc, key) => {
     // Check if the current key is "runes"
     if (key === 'runes') {
-      // 
+      //
       acc[key] = obj[key]?.["1"] === undefined ? [] : [obj[key]["1"]];
     } else {
       // Recursively apply the function to other keys
@@ -6107,7 +6108,7 @@ app.post("/hash_encode", (req, res) => {
       "siegeMode": [501,502,506,509,512,565,566].some(prop => battle.effect_ids.hasOwnProperty(prop)),
       "invertWinrate": invertWinrate
     })
-    
+
   }
   res.json();
 });
@@ -6116,7 +6117,7 @@ app.post("/sim", (req, res) => {
   let today = new Date();
   let time = today.getHours().toString().padStart(2, '0') + ":" + today.getMinutes().toString().padStart(2, '0') + ":" + today.getSeconds().toString().padStart(2, '0');
   process.stdout.write(`Request received (${time}) > `);
-  
+
   let max_threads = req.body.max_threads ?? 99;
   let tasks = req.body.tasks;
   let simConfig = req.body.simConfig;
